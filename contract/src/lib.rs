@@ -5,6 +5,8 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use execution_core::transfer::TRANSFER_CONTRACT;
+
 use multisig_contract_types::*;
 
 /// The state consists of the balance and nonce of each account, together with
@@ -48,6 +50,23 @@ impl ContractState {
         account_id
     }
 
+    /// Handles depositing an amount to the account with the given ID.
+    ///
+    /// NOTE: here we always accept a deposit to an existing account, however,
+    ///       nothing stops us from including more complex logic, such as an
+    ///       identity check.
+    fn deposit(&mut self, amount: u64, id: u128) {
+        let account = self
+            .accounts
+            .get_mut(&id)
+            .expect("The account must exist when depositting funds");
+
+        rusk_abi::call::<_, ()>(TRANSFER_CONTRACT, "deposit", &amount)
+            .expect("Retrieving deposit should succeed");
+
+        account.balance += amount;
+    }
+
     /// Returns the balance and nonce of the account with the given ID.
     fn account(&self, id: u128) -> AccountData {
         self.accounts
@@ -76,6 +95,11 @@ impl ContractState {
 #[no_mangle]
 unsafe fn create_account(arg_len: u32) -> u32 {
     rusk_abi::wrap_call(arg_len, |arg| STATE.create_account(arg))
+}
+
+#[no_mangle]
+unsafe fn deposit(arg_len: u32) -> u32 {
+    rusk_abi::wrap_call(arg_len, |(amount, id)| STATE.deposit(amount, id))
 }
 
 // Queries
