@@ -1,0 +1,18 @@
+[package]
+name = "multisig-contract-tests"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+
+publish = false
+
+[dependencies]
+multisig-contract-types = { workspace = true }
+
+execution-core = { workspace = true }
+rusk-abi = { workspace = true, features = ["host"] }
+
+bytecheck = { workspace = true }
+rkyv = { workspace = true }
+
+rand = "0.8.5"
