@@ -32,6 +32,7 @@ const BLOCK_HEIGHT: u64 = 1;
 const SNAPSHOT: &str = include_str!("../state.toml");
 
 const NUM_KEYS: usize = 16;
+const THRESHOLD: u32 = NUM_KEYS as u32 - 1;
 const RNG_SEED: u64 = 0xBEEF;
 const INITIAL_BALANCE: u64 = 10_000_000_000;
 
@@ -138,9 +139,15 @@ impl ContractSession {
     }
 
     fn create_account(&mut self) -> u64 {
-        let pks = self.pks.clone();
+        let public_keys = self.pks.clone();
+
+        let create_account = CreateAccount {
+            public_keys,
+            threshold: THRESHOLD,
+        };
+
         let id = self
-            .call(CONTRACT_ID, "create_account", &pks)
+            .call(CONTRACT_ID, "create_account", &create_account)
             .expect("Creating an account should succeed")
             .data;
         self.account_id = Some(id);

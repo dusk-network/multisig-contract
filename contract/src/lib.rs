@@ -5,7 +5,6 @@ extern crate alloc;
 use core::cmp::Ordering;
 
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::vec::Vec;
 
 use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
 
@@ -57,7 +56,11 @@ static mut STATE: ContractState = ContractState {
 impl ContractState {
     /// Creates an account with the given public keys, returning the new
     /// account's ID.
-    fn create_account(&mut self, keys: Vec<bls::PublicKey>) -> u64 {
+    fn create_account(&mut self, ca: CreateAccount) -> u64 {
+        if ca.threshold as usize > ca.public_keys.len() {
+            panic!("Cannot use a threshold larger than the number of keys");
+        }
+
         let account_id = self
             .accounts
             .last_key_value()
@@ -67,7 +70,7 @@ impl ContractState {
         let account_id = account_id + 1;
 
         let mut account_keys = BTreeSet::new();
-        for key in keys {
+        for key in ca.public_keys {
             if !account_keys.insert(WrappedPublicKey(key)) {
                 panic!("Cannot use duplicate keys to create an account");
             }
@@ -118,8 +121,8 @@ impl ContractState {
         }
 
         let account_keys = self.account_keys.get(&transfer.from_id).unwrap();
-        if transfer.from_kas.len() < account_keys.len().div_ceil(2) {
-            panic!("At least half of the keys must sign a transfer");
+        if transfer.from_kas.len() < account.threshold as usize {
+            panic!("Threshold number of keys not met");
         }
 
         // this set is here for the express purpose of checking for unique keys

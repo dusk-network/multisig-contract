@@ -13,6 +13,16 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 pub use execution_core::signatures::bls;
 
+/// Used to create multisig accounts.
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct CreateAccount {
+    /// Keys to be owned by the account.
+    pub public_keys: Vec<bls::PublicKey>,
+    /// Number of keys that need to sign to effect an operation.
+    pub threshold: u32,
+}
+
 /// Used to transfer funds from an account to a Moonlight account.
 #[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -54,6 +64,8 @@ impl Transfer {
 pub struct AccountData {
     /// The balance the account holds.
     pub balance: u64,
+    /// Number of keys that need sign to effect an operation.
+    pub threshold: u32,
     /// The current nonce of the account.
     pub nonce: u64,
 }
@@ -62,6 +74,7 @@ impl AccountData {
     /// An account that has never been used.
     pub const EMPTY: Self = AccountData {
         balance: 0,
+        threshold: 0,
         nonce: 0,
     };
 }
