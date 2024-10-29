@@ -124,7 +124,7 @@ impl ChangeAccount {
                     1 + match change {
                         AccountChange::AddKey { .. } => 193,
                         AccountChange::RemoveKey { .. } => 193,
-                        AccountChange::SetThreshold { .. } => 8,
+                        AccountChange::SetThreshold { .. } => 4,
                     }
                 })
                 .sum::<usize>()
@@ -157,9 +157,9 @@ impl ChangeAccount {
                     msg[offset] = Self::SET_THRESHOLD_TAG;
                     offset += 1;
 
-                    msg[offset..offset + 8]
+                    msg[offset..offset + 4]
                         .copy_from_slice(&threshold.to_le_bytes());
-                    offset += 8;
+                    offset += 4;
                 }
             }
         }

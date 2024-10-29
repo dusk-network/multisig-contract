@@ -32,7 +32,7 @@ const BLOCK_HEIGHT: u64 = 1;
 const SNAPSHOT: &str = include_str!("../state.toml");
 
 const NUM_KEYS: usize = 16;
-const THRESHOLD: u32 = NUM_KEYS as u32 - 1;
+const THRESHOLD: u32 = NUM_KEYS as u32 / 2;
 const MEMO: &str = "test-memo";
 const RNG_SEED: u64 = 0xBEEF;
 const INITIAL_BALANCE: u64 = 10_000_000_000;
@@ -231,7 +231,7 @@ impl ContractSession {
             signature: MultisigSignature::default(),
             receiver: self.pks[receiver_index],
             amount,
-            nonce: 1, // if its the first transfer, 2 if second, etc...
+            nonce: 1, // if its the first interaction, 2 if second, etc...
             memo: String::from(MEMO),
         };
 
@@ -241,8 +241,8 @@ impl ContractSession {
         //       technically unnecessary, since we could use only some of the
         //       keys, but as a test it is ok.
         let public_key = self.pks[0];
-        transfer.keys.push(public_key);
 
+        transfer.keys.push(public_key);
         transfer.signature = self.sks[0].sign_multisig(&public_key, &msg);
 
         for i in 1..NUM_KEYS {
@@ -297,6 +297,86 @@ impl ContractSession {
             .expect("Refunding must succeed");
     }
 
+    fn change_account(&mut self, index: usize, changes: Vec<AccountChange>) {
+        let account_id = self
+            .account_id
+            .expect("must call `create_account` before `change_account`");
+        let sk = self.sks[index].clone();
+
+        const GAS_LIMIT: u64 = 2_000_000;
+        const GAS_PRICE: u64 = 1;
+        const NONCE: u64 = 1;
+
+        let mut change_account = ChangeAccount {
+            account_id,
+            keys: Vec::with_capacity(NUM_KEYS),
+            signature: MultisigSignature::default(),
+            changes,
+            nonce: 1, // if its the first interaction, 2 if second, etc...
+        };
+
+        let msg = change_account.signature_msg();
+
+        // NOTE: Here we sign with all the keys of the account. This is
+        //       technically unnecessary, since we could use only some of the
+        //       keys, but as a test it is ok.
+        let public_key = self.pks[0];
+
+        change_account.keys.push(public_key);
+        change_account.signature = self.sks[0].sign_multisig(&public_key, &msg);
+
+        for i in 1..NUM_KEYS {
+            let public_key = self.pks[i];
+            change_account.keys.push(public_key);
+
+            let s = self.sks[i].sign_multisig(&public_key, &msg);
+            change_account.signature = change_account.signature.aggregate(&[s]);
+        }
+
+        let fn_args = rkyv::to_bytes::<_, 128>(&change_account)
+            .expect("Serializing argument should succeed")
+            .to_vec();
+
+        let tx = Transaction::moonlight(
+            &sk,
+            None,
+            0,
+            0,
+            GAS_LIMIT,
+            GAS_PRICE,
+            NONCE,
+            CHAIN_ID,
+            Some(ContractCall {
+                contract: CONTRACT_ID,
+                fn_name: String::from("change_account"),
+                fn_args,
+            }),
+        )
+        .unwrap();
+
+        let receipt = self
+            .session
+            .call::<_, Result<Vec<u8>, ContractError>>(
+                TRANSFER_CONTRACT,
+                "spend_and_execute",
+                &tx,
+                GAS_LIMIT,
+            )
+            .expect("Executing transaction should succeed");
+
+        println!("{:?}", receipt.data);
+
+        let _refund_receipt = self
+            .session
+            .call::<_, ()>(
+                TRANSFER_CONTRACT,
+                "refund",
+                &receipt.gas_spent,
+                u64::MAX,
+            )
+            .expect("Refunding must succeed");
+    }
+
     fn account(&mut self) -> AccountData {
         let account_id = self
             .account_id
@@ -306,8 +386,7 @@ impl ContractSession {
             .data
     }
 
-    fn balance(&mut self, index: usize) -> u64 {
-        let key = self.pks[index].clone();
+    fn balance(&mut self, key: PublicKey) -> u64 {
         self.call::<_, MoonlightAccountData>(TRANSFER_CONTRACT, "account", &key)
             .expect("Querying an account should succeed")
             .data
@@ -323,8 +402,7 @@ impl ContractSession {
             .expect("Feeding account keys should succeed")
     }
 
-    fn key_accounts(&mut self, index: usize) -> Vec<u64> {
-        let key = self.pks[index].clone();
+    fn key_accounts(&mut self, key: PublicKey) -> Vec<u64> {
         self.feeder_query("key_accounts", &key)
             .expect("Feeding key accounts should succeed")
     }
@@ -338,11 +416,13 @@ fn create_account() {
     session.create_account();
 
     let account_keys = session.account_keys();
+
     assert_eq!(
         account_keys.len(),
         session.pks.len(),
         "Equal number of keys should be inserted"
     );
+
     for account_key in account_keys {
         let mut contains = false;
         for pk in &session.pks {
@@ -357,16 +437,19 @@ fn create_account() {
         );
     }
 
-    let id = session.account_id.unwrap();
+    let account_id = session.account_id.unwrap();
 
-    for (i, _) in session.pks.clone().into_iter().enumerate() {
-        let ids = session.key_accounts(i);
+    for key in session.pks.clone() {
+        let ids = session.key_accounts(key);
         assert_eq!(
             ids.len(),
             1,
             "The public key should only be used by one account"
         );
-        assert_eq!(ids[0], id, "The ID should be of the created account");
+        assert_eq!(
+            ids[0], account_id,
+            "The ID should be of the created account"
+        );
     }
 }
 
@@ -410,7 +493,7 @@ fn transfer() {
     session.deposit(DEPOSITOR_INDEX, DEPOSIT_AMOUNT);
 
     let account = session.account();
-    let balance = session.balance(RECEIVER_INDEX);
+    let balance = session.balance(session.pks[RECEIVER_INDEX]);
     assert_eq!(
         account.balance, DEPOSIT_AMOUNT,
         "Account should have the amount deposited",
@@ -423,7 +506,7 @@ fn transfer() {
     session.transfer(TRANSFERRER_INDEX, RECEIVER_INDEX, TRANSFER_AMOUNT);
 
     let account = session.account();
-    let balance = session.balance(RECEIVER_INDEX);
+    let balance = session.balance(session.pks[RECEIVER_INDEX]);
     assert_eq!(
         account.balance,
         DEPOSIT_AMOUNT - TRANSFER_AMOUNT,
@@ -433,6 +516,129 @@ fn transfer() {
         balance,
         INITIAL_BALANCE + TRANSFER_AMOUNT,
         "The receiver account should, after the transfer, have its initial balance plus the transferred amount"
+    );
+}
+
+#[test]
+fn change_account() {
+    const CHANGER_INDEX: usize = 1;
+    const REMOVE_INDEX: usize = 4;
+
+    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut session = ContractSession::new(&mut rng);
+
+    let new_sk = SecretKey::random(&mut rng);
+    let new_pk = PublicKey::from(&new_sk);
+
+    session.create_account();
+
+    let account = session.account();
+    assert_eq!(
+        account.threshold, THRESHOLD,
+        "Threshold should be the initial one",
+    );
+
+    let mut pks = session.pks.clone();
+    let account_keys = session.account_keys();
+
+    assert_eq!(
+        account_keys.len(),
+        pks.len(),
+        "Equal number of keys should be inserted"
+    );
+
+    for account_key in account_keys {
+        let mut contains = false;
+        for pk in &pks {
+            if account_key == *pk {
+                contains = true;
+                break;
+            }
+        }
+        assert!(
+            contains,
+            "Account keys should be the ones used in creating it"
+        );
+    }
+
+    let account_id = session.account_id.unwrap();
+
+    for key in pks.clone() {
+        let ids = session.key_accounts(key);
+        assert_eq!(
+            ids.len(),
+            1,
+            "The public key should only be used by one account"
+        );
+        assert_eq!(
+            ids[0], account_id,
+            "The ID should be of the created account"
+        );
+    }
+
+    session.change_account(
+        CHANGER_INDEX,
+        vec![
+            AccountChange::SetThreshold {
+                threshold: THRESHOLD + 1,
+            },
+            AccountChange::RemoveKey {
+                key: session.pks[REMOVE_INDEX],
+            },
+            AccountChange::AddKey { key: new_pk },
+        ],
+    );
+
+    let account = session.account();
+    assert_eq!(
+        account.threshold,
+        THRESHOLD + 1,
+        "Threshold should be the set to the new value",
+    );
+
+    let removed_pk = pks.remove(REMOVE_INDEX);
+    pks.push(new_pk);
+    let account_keys = session.account_keys();
+
+    assert_eq!(
+        account_keys.len(),
+        pks.len(),
+        "There should be the same number of keys after change"
+    );
+
+    for account_key in account_keys {
+        let mut contains = false;
+        for pk in &pks {
+            if account_key == *pk {
+                contains = true;
+                break;
+            }
+        }
+        assert!(
+            contains,
+            "Account keys should be the ones used in creating it"
+        );
+    }
+
+    let account_id = session.account_id.unwrap();
+
+    for key in pks.clone() {
+        let ids = session.key_accounts(key);
+        assert_eq!(
+            ids.len(),
+            1,
+            "The public key should only be used by one account"
+        );
+        assert_eq!(
+            ids[0], account_id,
+            "The ID should be of the created account"
+        );
+    }
+
+    assert_eq!(
+        session.key_accounts(removed_pk).len(),
+        0,
+        "The removed key should have no accounts"
     );
 }
 

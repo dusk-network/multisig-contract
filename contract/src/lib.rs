@@ -81,7 +81,14 @@ impl ContractState {
                 .insert(account_id);
         }
         self.account_keys.insert(account_id, account_keys);
-        self.accounts.insert(account_id, AccountData::EMPTY);
+        self.accounts.insert(
+            account_id,
+            AccountData {
+                balance: 0,
+                threshold: ca.threshold,
+                nonce: 0,
+            },
+        );
 
         rusk_abi::emit(
             "create_account",
@@ -132,14 +139,21 @@ impl ContractState {
             panic!("The account doesn't have enough balance to transfer");
         }
         if t.nonce != account.nonce + 1 {
-            panic!("The nonce must be the previous value incremented");
+            panic!("The nonce must be the current value incremented");
         }
 
         let mut key_set = BTreeSet::new();
+        let account_keys = self.account_keys.get(&t.account_id).unwrap();
 
         for key in &t.keys {
-            if !key_set.insert(WrappedPublicKey(*key)) {
+            let key = WrappedPublicKey(*key);
+
+            if !key_set.insert(key) {
                 panic!("Cannot use duplicate keys to transfer");
+            }
+
+            if !account_keys.contains(&key) {
+                panic!("Signing key must be used by account");
             }
         }
 
@@ -181,6 +195,86 @@ impl ContractState {
                 memo: t.memo,
             },
         );
+    }
+
+    fn change_account(&mut self, c: ChangeAccount) {
+        let account = self
+            .accounts
+            .get_mut(&c.account_id)
+            .expect("The account must exist when changing it");
+
+        if c.nonce != account.nonce + 1 {
+            panic!("The nonce must be the current value incremented");
+        }
+
+        let mut key_set = BTreeSet::new();
+        let account_keys = self.account_keys.get_mut(&c.account_id).unwrap();
+
+        for key in &c.keys {
+            let key = WrappedPublicKey(*key);
+
+            if !key_set.insert(key) {
+                panic!("Cannot use duplicate keys to transfer");
+            }
+
+            if !account_keys.contains(&key) {
+                panic!("Signing key must be used by account");
+            }
+        }
+
+        if c.keys.len() < account.threshold as usize {
+            panic!("Threshold number of keys not met");
+        }
+
+        let msg = c.signature_msg();
+        if !rusk_abi::verify_bls_multisig(msg, c.keys, c.signature) {
+            panic!("The signature should be valid to effect the change");
+        }
+
+        for change in c.changes {
+            match change {
+                AccountChange::AddKey { key } => {
+                    let key = WrappedPublicKey(key);
+
+                    if !account_keys.insert(key) {
+                        panic!("Key to add already used by account");
+                    }
+
+                    let key_accounts =
+                        self.key_accounts.entry(key).or_insert(BTreeSet::new());
+
+                    key_accounts.insert(c.account_id);
+                }
+                AccountChange::RemoveKey { key } => {
+                    if account_keys.len() < account.threshold as usize {
+                        panic!("Removing key from account leaves key number below threshold");
+                    }
+
+                    let key = WrappedPublicKey(key);
+
+                    if !account_keys.remove(&key) {
+                        panic!("Key to remove not used by account");
+                    }
+
+                    let key_accounts = self.key_accounts.get_mut(&key).unwrap();
+
+                    key_accounts.remove(&c.account_id);
+                }
+                AccountChange::SetThreshold { threshold } => {
+                    if account_keys.len() < threshold as usize {
+                        panic!(
+                            "Threshold too large for number of keys in account"
+                        );
+                    }
+
+                    account.threshold = threshold;
+                }
+            }
+        }
+
+        account.nonce += 1;
+
+        // TODO: emit event
     }
 
     /// Returns the balance and nonce of the account with the given ID.
@@ -231,6 +325,11 @@ unsafe fn deposit(arg_len: u32) -> u32 {
 #[no_mangle]
 unsafe fn transfer(arg_len: u32) -> u32 {
     rusk_abi::wrap_call(arg_len, |arg| STATE.transfer(arg))
+}
+
+#[no_mangle]
+unsafe fn change_account(arg_len: u32) -> u32 {
+    rusk_abi::wrap_call(arg_len, |arg| STATE.change_account(arg))
 }
 
 // Queries
