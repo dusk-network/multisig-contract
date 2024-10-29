@@ -1444,8 +1444,10 @@ dependencies = [
 name = "multisig-contract"
 version = "0.1.0"
 dependencies = [
+ "bytecheck",
  "execution-core",
  "multisig-contract-types",
+ "rkyv",
  "rusk-abi",
 ]
 

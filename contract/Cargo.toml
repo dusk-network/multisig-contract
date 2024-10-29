@@ -10,5 +10,8 @@ multisig-contract-types = { workspace = true }
 execution-core = { workspace = true }
 rusk-abi = { workspace = true, features = ["abi", "dlmalloc"] }
 
+bytecheck = { workspace = true }
+rkyv = { workspace = true }
+
 [lib]
 crate-type = ["cdylib"]

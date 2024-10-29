@@ -2,12 +2,41 @@
 
 extern crate alloc;
 
+use core::cmp::Ordering;
+
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
 
+use bytecheck::CheckBytes;
+use rkyv::{Archive, Deserialize, Serialize};
+
 use multisig_contract_types::*;
+
+#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct WrappedPublicKey(pub bls::PublicKey);
+
+impl PartialEq for WrappedPublicKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_raw_bytes().eq(&other.0.to_raw_bytes())
+    }
+}
+
+impl Eq for WrappedPublicKey {}
+
+impl PartialOrd for WrappedPublicKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WrappedPublicKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.to_raw_bytes().cmp(&other.0.to_raw_bytes())
+    }
+}
 
 /// The state consists of the balance and nonce of each account, together with
 /// each account's keys. It also holds an index of the accounts to which each

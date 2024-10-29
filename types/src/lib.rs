@@ -5,8 +5,6 @@
 
 extern crate alloc;
 
-use core::cmp::Ordering;
-
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -14,31 +12,6 @@ use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 
 pub use execution_core::signatures::bls;
-
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, Archive, Serialize, Deserialize)]
-#[archive_attr(derive(CheckBytes))]
-pub struct WrappedPublicKey(pub bls::PublicKey);
-
-impl PartialEq for WrappedPublicKey {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_raw_bytes().eq(&other.0.to_raw_bytes())
-    }
-}
-
-impl Eq for WrappedPublicKey {}
-
-impl PartialOrd for WrappedPublicKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for WrappedPublicKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.to_raw_bytes().cmp(&other.0.to_raw_bytes())
-    }
-}
 
 /// Used to transfer funds from an account to a Moonlight account.
 #[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
