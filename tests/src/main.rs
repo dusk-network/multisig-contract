@@ -1,6 +1,9 @@
 use std::sync::mpsc;
 
-use execution_core::{ContractId, StandardBufSerializer};
+use execution_core::{
+    transfer::{data::ContractCall, Transaction, TRANSFER_CONTRACT},
+    ContractError, ContractId, StandardBufSerializer,
+};
 use rusk_abi::{CallReceipt, ContractData, PiecrustError, Session};
 use rusk_recovery_tools::state;
 use tempfile::TempDir;
@@ -33,7 +36,7 @@ struct ContractSession {
     session: Session,
     sks: Vec<SecretKey>,
     pks: Vec<PublicKey>,
-    account_id: Option<u128>,
+    account_id: Option<u64>,
     _state_dir: TempDir,
 }
 
@@ -108,7 +111,7 @@ impl ContractSession {
         Ok(results)
     }
 
-    fn create_account(&mut self) -> u128 {
+    fn create_account(&mut self) -> u64 {
         let pks = self.pks.clone();
         let id = self
             .call("create_account", &pks)
@@ -116,6 +119,55 @@ impl ContractSession {
             .data;
         self.account_id = Some(id);
         id
+    }
+
+    fn deposit(&mut self, index: usize, amount: u64) {
+        let id = self
+            .account_id
+            .expect("must call `create_account` before `account`");
+        let sk = self.sks[index].clone();
+
+        const GAS_LIMIT: u64 = 1_000_000;
+        const GAS_PRICE: u64 = 1;
+        const NONCE: u64 = 1;
+
+        let fn_args = rkyv::to_bytes::<_, 128>(&(amount, id))
+            .expect("Serializing argument should succeed")
+            .to_vec();
+
+        let tx = Transaction::moonlight(
+            &sk,
+            None,
+            0,
+            amount,
+            GAS_LIMIT,
+            GAS_PRICE,
+            NONCE,
+            CHAIN_ID,
+            Some(ContractCall {
+                contract: CONTRACT_ID,
+                fn_name: String::from("deposit"),
+                fn_args,
+            }),
+        )
+        .unwrap();
+
+        let receipt = self
+            .session
+            .call::<_, Result<Vec<u8>, ContractError>>(
+                TRANSFER_CONTRACT,
+                "spend_and_execute",
+                &tx,
+                GAS_LIMIT,
+            )
+            .expect("Executing transaction should succeed");
+
+        println!("{:?}", receipt.data);
+
+        let _refund_receipt = self
+            .session
+            .call::<_, ()>(TRANSFER_CONTRACT, "refund", &receipt.gas_spent, u64::MAX)
+            .expect("Refunding must succeed");
     }
 
     fn account(&mut self) -> AccountData {
@@ -136,7 +188,7 @@ impl ContractSession {
             .expect("Feeding account keys should succeed")
     }
 
-    fn key_accounts(&mut self, index: usize) -> Vec<u128> {
+    fn key_accounts(&mut self, index: usize) -> Vec<u64> {
         let key = self.pks[index].clone();
         self.feeder_query("key_accounts", &key)
             .expect("Feeding key accounts should succeed")
@@ -167,6 +219,30 @@ fn create_account() {
         );
         assert_eq!(ids[0], id, "The ID should be of the created account");
     }
+}
+
+#[test]
+fn deposit() {
+    const DEPOSIT_AMOUNT: u64 = 100;
+
+    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut session = ContractSession::new(&mut rng);
+
+    session.create_account();
+    let account = session.account();
+
+    assert_eq!(
+        account.balance, 0,
+        "Account should have zero initial balance"
+    );
+
+    session.deposit(1, DEPOSIT_AMOUNT);
+    let account = session.account();
+
+    assert_eq!(
+        account.balance, DEPOSIT_AMOUNT,
+        "Account should have the amount deposited"
+    );
 }
 
 // #[test]

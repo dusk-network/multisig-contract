@@ -13,9 +13,9 @@ use multisig_contract_types::*;
 /// each account's keys. It also holds an index of the accounts to which each
 /// key belongs to.
 struct ContractState {
-    accounts: BTreeMap<u128, AccountData>,
-    account_keys: BTreeMap<u128, Vec<WrappedPublicKey>>,
-    key_accounts: BTreeMap<WrappedPublicKey, Vec<u128>>,
+    accounts: BTreeMap<u64, AccountData>,
+    account_keys: BTreeMap<u64, Vec<WrappedPublicKey>>,
+    key_accounts: BTreeMap<WrappedPublicKey, Vec<u64>>,
 }
 
 /// The state starts out all empty.
@@ -28,7 +28,7 @@ static mut STATE: ContractState = ContractState {
 impl ContractState {
     /// Creates an account with the given public keys, returning the new
     /// account's ID.
-    fn create_account(&mut self, keys: Vec<WrappedPublicKey>) -> u128 {
+    fn create_account(&mut self, keys: Vec<WrappedPublicKey>) -> u64 {
         let account_id = self
             .accounts
             .last_key_value()
@@ -55,11 +55,11 @@ impl ContractState {
     /// NOTE: here we always accept a deposit to an existing account, however,
     ///       nothing stops us from including more complex logic, such as an
     ///       identity check.
-    fn deposit(&mut self, amount: u64, id: u128) {
+    fn deposit(&mut self, amount: u64, id: u64) {
         let account = self
             .accounts
             .get_mut(&id)
-            .expect("The account must exist when depositting funds");
+            .expect("The account must exist when depositing funds");
 
         rusk_abi::call::<_, ()>(TRANSFER_CONTRACT, "deposit", &amount)
             .expect("Retrieving deposit should succeed");
@@ -68,7 +68,7 @@ impl ContractState {
     }
 
     /// Returns the balance and nonce of the account with the given ID.
-    fn account(&self, id: u128) -> AccountData {
+    fn account(&self, id: u64) -> AccountData {
         self.accounts
             .get(&id)
             .unwrap_or(&AccountData::EMPTY)
@@ -76,7 +76,7 @@ impl ContractState {
     }
 
     /// Feeds the public keys used by the account with the given ID.
-    fn account_keys(&self, id: u128) {
+    fn account_keys(&self, id: u64) {
         for key in self.account_keys.get(&id).cloned().unwrap_or(Vec::new()) {
             rusk_abi::feed(key);
         }
