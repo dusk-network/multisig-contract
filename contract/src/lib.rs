@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use execution_core::transfer::TRANSFER_CONTRACT;
+use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
 
 use multisig_contract_types::*;
 
@@ -67,6 +67,69 @@ impl ContractState {
         account.balance += amount;
     }
 
+    /// Transfers an amount from an account to the given Moonlight account.
+    ///
+    /// Signatures must be included of at least half (rounded-up) of at least
+    /// half of the account's keys.
+    fn transfer(&mut self, transfer: Transfer) {
+        let account = self
+            .accounts
+            .get_mut(&transfer.from_id)
+            .expect("The account must exist when transferring from it");
+
+        if transfer.amount > account.balance {
+            panic!("The account doesn't have enough balance to transfer");
+        }
+        if transfer.nonce != account.nonce + 1 {
+            panic!("The nonce must be the previous value incremented");
+        }
+
+        let account_keys = self.account_keys.get(&transfer.from_id).unwrap();
+        if transfer.from_kas.len() < account_keys.len().div_ceil(2) {
+            panic!("At least half of the keys must sign a transfer");
+        }
+
+        for kas in &transfer.from_kas {
+            // NOTE: we might want to use a map for keys instead of a vector to
+            //       speed up these lookups if they become expensive. For now,
+            //       since we don't expect hundreds of keys for each account,
+            //       this is fine.
+            let mut contains = false;
+
+            for k in account_keys {
+                if k.0 == kas.public_key {
+                    contains = true;
+                    break;
+                }
+            }
+
+            if !contains {
+                panic!("The keys used to sign the transfer should be used by the account");
+            }
+        }
+
+        let msg = transfer.signature_msg();
+        if !rusk_abi::verify_bls_multisig(msg, transfer.from_kas) {
+            panic!("The signature should be valid to effect the transfer");
+        }
+
+        // NOTE: Here we simply immediately give the amount to the specified
+        //       Moonlight account, however, it would also be possible - in a
+        //       different type of contract - to keep the funds until a
+        //       withdrawal is made.
+        //       In such a case, it would be possible to withdraw the funds to
+        //       either Moonlight *or* Phoenix.
+        rusk_abi::call::<_, ()>(
+            TRANSFER_CONTRACT,
+            "contract_to_account",
+            &ContractToAccount {
+                account: transfer.to,
+                value: transfer.amount,
+            },
+        )
+        .expect("Transferring to the given account should succeed");
+    }
+
     /// Returns the balance and nonce of the account with the given ID.
     fn account(&self, id: u64) -> AccountData {
         self.accounts
@@ -100,6 +163,11 @@ unsafe fn create_account(arg_len: u32) -> u32 {
 #[no_mangle]
 unsafe fn deposit(arg_len: u32) -> u32 {
     rusk_abi::wrap_call(arg_len, |(amount, id)| STATE.deposit(amount, id))
+}
+
+#[no_mangle]
+unsafe fn transfer(arg_len: u32) -> u32 {
+    rusk_abi::wrap_call(arg_len, |arg| STATE.transfer(arg))
 }
 
 // Queries
