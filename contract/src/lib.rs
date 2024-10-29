@@ -136,14 +136,14 @@ impl ContractState {
         }
 
         let account_keys = self.account_keys.get(&t.account_id).unwrap();
-        if t.account_kas.len() < account.threshold as usize {
+        if t.keys.len() < account.threshold as usize {
             panic!("Threshold number of keys not met");
         }
 
         let mut key_set = BTreeSet::new();
 
-        for kas in &t.account_kas {
-            if !key_set.insert(WrappedPublicKey(kas.public_key)) {
+        for key in &t.keys {
+            if !key_set.insert(WrappedPublicKey(*key)) {
                 panic!("Cannot use duplicate keys to transfer");
             }
 
@@ -154,7 +154,7 @@ impl ContractState {
             let mut contains = false;
 
             for k in account_keys {
-                if k.0 == kas.public_key {
+                if k.0 == *key {
                     contains = true;
                     break;
                 }
@@ -166,7 +166,7 @@ impl ContractState {
         }
 
         let msg = t.signature_msg();
-        if !rusk_abi::verify_bls_multisig(msg, t.account_kas) {
+        if !rusk_abi::verify_bls_multisig(msg, t.keys, t.signature) {
             panic!("The signature should be valid to effect the transfer");
         }
 

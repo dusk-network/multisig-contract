@@ -42,8 +42,10 @@ pub struct Deposit {
 pub struct Transfer {
     /// The ID of the account to transfer from.
     pub account_id: u64,
-    /// The keys and signatures used to sign the transfer.
-    pub account_kas: Vec<bls::PublicKeyAndSignature>,
+    /// The keys used to sign the transfer.
+    pub keys: Vec<bls::PublicKey>,
+    /// The signature of the transfer.
+    pub signature: bls::MultisigSignature,
     /// The Moonlight account to transfer the amount to.
     pub receiver: bls::PublicKey,
     /// The amount to transfer.
@@ -62,11 +64,12 @@ impl Transfer {
     //       If we did include the keys, the signers would have to agree on the
     //       set of keys to be used prior to signing.
     pub fn signature_msg(&self) -> Vec<u8> {
-        let mut msg = vec![0; 8 + 193 + 8 + 8];
+        let mut msg = vec![0; 8 + 193 + 8 + 8 + self.memo.len()];
         msg[..8].copy_from_slice(&self.account_id.to_le_bytes());
         msg[8..201].copy_from_slice(&self.receiver.to_raw_bytes());
         msg[201..209].copy_from_slice(&self.amount.to_le_bytes());
         msg[209..217].copy_from_slice(&self.nonce.to_le_bytes());
+        msg[217..].copy_from_slice(&self.memo.as_bytes());
         msg
     }
 }

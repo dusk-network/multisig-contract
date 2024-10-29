@@ -19,7 +19,7 @@ use rkyv::{Archive, Deserialize, Infallible, Serialize};
 use rand::rngs::StdRng;
 use rand::{CryptoRng, RngCore, SeedableRng};
 
-use bls::{PublicKey, SecretKey};
+use bls::{MultisigSignature, PublicKey, SecretKey};
 use multisig_contract_types::*;
 
 const CONTRACT_BYTECODE: &[u8] =
@@ -33,6 +33,7 @@ const SNAPSHOT: &str = include_str!("../state.toml");
 
 const NUM_KEYS: usize = 16;
 const THRESHOLD: u32 = NUM_KEYS as u32 - 1;
+const MEMO: &str = "test-memo";
 const RNG_SEED: u64 = 0xBEEF;
 const INITIAL_BALANCE: u64 = 10_000_000_000;
 
@@ -167,7 +168,7 @@ impl ContractSession {
         let deposit = Deposit {
             account_id,
             amount,
-            memo: String::new(),
+            memo: String::from(MEMO),
         };
 
         let fn_args = rkyv::to_bytes::<_, 128>(&deposit)
@@ -226,11 +227,12 @@ impl ContractSession {
 
         let mut transfer = Transfer {
             account_id,
-            account_kas: Vec::with_capacity(NUM_KEYS),
+            keys: Vec::with_capacity(NUM_KEYS),
+            signature: MultisigSignature::default(),
             receiver: self.pks[receiver_index],
             amount,
             nonce: 1, // if its the first transfer, 2 if second, etc...
-            memo: String::new(),
+            memo: String::from(MEMO),
         };
 
         let msg = transfer.signature_msg();
@@ -238,13 +240,17 @@ impl ContractSession {
         // NOTE: Here we sign with all the keys of the account. This is
         //       technically unnecessary, since we could use only some of the
         //       keys, but as a test it is ok.
-        for i in 0..NUM_KEYS {
+        let public_key = self.pks[0];
+        transfer.keys.push(public_key);
+
+        transfer.signature = self.sks[0].sign_multisig(&public_key, &msg);
+
+        for i in 1..NUM_KEYS {
             let public_key = self.pks[i];
-            let signature = self.sks[i].sign_multisig(&public_key, &msg);
-            transfer.account_kas.push(bls::PublicKeyAndSignature {
-                public_key,
-                signature,
-            });
+            transfer.keys.push(public_key);
+
+            let s = self.sks[i].sign_multisig(&public_key, &msg);
+            transfer.signature = transfer.signature.aggregate(&[s]);
         }
 
         let fn_args = rkyv::to_bytes::<_, 128>(&transfer)
