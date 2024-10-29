@@ -57,6 +57,12 @@ impl ContractState {
     /// Creates an account with the given public keys, returning the new
     /// account's ID.
     fn create_account(&mut self, ca: CreateAccount) -> u64 {
+        if ca.keys.len() < 1 {
+            panic!("There must be at least one key to create an account");
+        }
+        if ca.threshold < 1 {
+            panic!("Thresold must be at least 1");
+        }
         if ca.threshold as usize > ca.keys.len() {
             panic!("Cannot use a threshold larger than the number of keys");
         }
@@ -246,8 +252,11 @@ impl ContractState {
                     key_accounts.insert(c.account_id);
                 }
                 AccountChange::RemoveKey { key } => {
-                    if account_keys.len() < account.threshold as usize {
+                    if account.threshold as usize > account_keys.len() {
                         panic!("Removing key from account leaves key number below threshold");
+                    }
+                    if account_keys.len() == 1 {
+                        panic!("Removing key from account leaves no keys left");
                     }
 
                     let key = WrappedPublicKey(key);
@@ -261,7 +270,10 @@ impl ContractState {
                     key_accounts.remove(&c.account_id);
                 }
                 AccountChange::SetThreshold { threshold } => {
-                    if account_keys.len() < threshold as usize {
+                    if threshold < 1 {
+                        panic!("Threshold must be at least 1");
+                    }
+                    if threshold as usize > account_keys.len() {
                         panic!(
                             "Threshold too large for number of keys in account"
                         );
