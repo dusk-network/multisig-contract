@@ -135,17 +135,16 @@ impl ContractState {
             panic!("The nonce must be the previous value incremented");
         }
 
-        let account_keys = self.account_keys.get(&t.account_id).unwrap();
-        if t.keys.len() < account.threshold as usize {
-            panic!("Threshold number of keys not met");
-        }
-
         let mut key_set = BTreeSet::new();
 
         for key in &t.keys {
             if !key_set.insert(WrappedPublicKey(*key)) {
                 panic!("Cannot use duplicate keys to transfer");
             }
+        }
+
+        if t.keys.len() < account.threshold as usize {
+            panic!("Threshold number of keys not met");
         }
 
         let msg = t.signature_msg();
@@ -168,6 +167,9 @@ impl ContractState {
             },
         )
         .expect("Transferring to the given account should succeed");
+
+        account.balance -= t.amount;
+        account.nonce += 1;
 
         rusk_abi::emit(
             "transfer",

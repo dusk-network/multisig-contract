@@ -425,7 +425,8 @@ fn transfer() {
     let account = session.account();
     let balance = session.balance(RECEIVER_INDEX);
     assert_eq!(
-        account.balance, DEPOSIT_AMOUNT,
+        account.balance,
+        DEPOSIT_AMOUNT - TRANSFER_AMOUNT,
         "Account should have the amount deposited minus the transferred amount"
     );
     assert_eq!(
