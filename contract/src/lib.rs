@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 
 use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
@@ -14,8 +14,8 @@ use multisig_contract_types::*;
 /// key belongs to.
 struct ContractState {
     accounts: BTreeMap<u64, AccountData>,
-    account_keys: BTreeMap<u64, Vec<WrappedPublicKey>>,
-    key_accounts: BTreeMap<WrappedPublicKey, Vec<u64>>,
+    account_keys: BTreeMap<u64, BTreeSet<WrappedPublicKey>>,
+    key_accounts: BTreeMap<WrappedPublicKey, BTreeSet<u64>>,
 }
 
 /// The state starts out all empty.
@@ -28,7 +28,7 @@ static mut STATE: ContractState = ContractState {
 impl ContractState {
     /// Creates an account with the given public keys, returning the new
     /// account's ID.
-    fn create_account(&mut self, keys: Vec<WrappedPublicKey>) -> u64 {
+    fn create_account(&mut self, keys: Vec<bls::PublicKey>) -> u64 {
         let account_id = self
             .accounts
             .last_key_value()
@@ -37,14 +37,18 @@ impl ContractState {
             .unwrap_or(0);
         let account_id = account_id + 1;
 
-        for key in &keys {
-            self.key_accounts
-                .entry(*key)
-                .or_insert(Vec::new())
-                .push(account_id);
-        }
+        let mut account_keys = BTreeSet::new();
+        for key in keys {
+            if !account_keys.insert(WrappedPublicKey(key)) {
+                panic!("Cannot use duplicate keys to create an account");
+            }
 
-        self.account_keys.insert(account_id, keys);
+            self.key_accounts
+                .entry(WrappedPublicKey(key))
+                .or_insert(BTreeSet::new())
+                .insert(account_id);
+        }
+        self.account_keys.insert(account_id, account_keys);
         self.accounts.insert(account_id, AccountData::EMPTY);
 
         account_id
@@ -89,7 +93,15 @@ impl ContractState {
             panic!("At least half of the keys must sign a transfer");
         }
 
+        // this set is here for the express purpose of checking for unique keys
+        // in the kas
+        let mut uniqueness_set = BTreeSet::new();
+
         for kas in &transfer.from_kas {
+            if !uniqueness_set.insert(WrappedPublicKey(kas.public_key)) {
+                panic!("Cannot use duplicate keys to transfer");
+            }
+
             // NOTE: we might want to use a map for keys instead of a vector to
             //       speed up these lookups if they become expensive. For now,
             //       since we don't expect hundreds of keys for each account,
@@ -140,14 +152,24 @@ impl ContractState {
 
     /// Feeds the public keys used by the account with the given ID.
     fn account_keys(&self, id: u64) {
-        for key in self.account_keys.get(&id).cloned().unwrap_or(Vec::new()) {
+        for key in self
+            .account_keys
+            .get(&id)
+            .cloned()
+            .unwrap_or(BTreeSet::new())
+        {
             rusk_abi::feed(key);
         }
     }
 
     /// Feeds the account IDs by which the given public key is used.
-    fn key_accounts(&self, key: WrappedPublicKey) {
-        for id in self.key_accounts.get(&key).cloned().unwrap_or(Vec::new()) {
+    fn key_accounts(&self, key: bls::PublicKey) {
+        for id in self
+            .key_accounts
+            .get(&WrappedPublicKey(key))
+            .cloned()
+            .unwrap_or(BTreeSet::new())
+        {
             rusk_abi::feed(id)
         }
     }

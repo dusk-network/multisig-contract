@@ -204,10 +204,10 @@ impl ContractSession {
     fn transfer(&mut self, index: usize, receiver_index: usize, amount: u64) {
         let id = self
             .account_id
-            .expect("must call `create_account` before `account`");
+            .expect("must call `create_account` before `transfer`");
         let sk = self.sks[index].clone();
 
-        const GAS_LIMIT: u64 = 1_000_000;
+        const GAS_LIMIT: u64 = 2_000_000;
         const GAS_PRICE: u64 = 1;
         const NONCE: u64 = 1;
 
@@ -317,11 +317,25 @@ fn create_account() {
 
     session.create_account();
 
+    let account_keys = session.account_keys();
     assert_eq!(
-        session.account_keys(),
-        session.pks,
-        "Account keys should be the ones used in creating it"
+        account_keys.len(),
+        session.pks.len(),
+        "Equal number of keys should be inserted"
     );
+    for account_key in account_keys {
+        let mut contains = false;
+        for pk in &session.pks {
+            if account_key == *pk {
+                contains = true;
+                break;
+            }
+        }
+        assert!(
+            contains,
+            "Account keys should be the ones used in creating it"
+        );
+    }
 
     let id = session.account_id.unwrap();
 
