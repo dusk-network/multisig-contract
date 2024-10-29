@@ -232,3 +232,17 @@ pub struct TransferEvent {
     /// Memo included with the transfer.
     pub memo: String,
 }
+
+/// Event emitted upon a successful account change.
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct ChangeAccountEvent {
+    /// The account that changed.
+    pub account_id: u64,
+    /// Keys added during the change.
+    pub added_keys: Vec<bls::PublicKey>,
+    /// Keys removed during the change.
+    pub removed_keys: Vec<bls::PublicKey>,
+    /// Threshold after the change.
+    pub threshold: u32,
+}

@@ -5,6 +5,7 @@ extern crate alloc;
 use core::cmp::Ordering;
 
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec::Vec;
 
 use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
 
@@ -237,6 +238,9 @@ impl ContractState {
             panic!("The signature should be valid to effect the change");
         }
 
+        let mut added_keys = Vec::new();
+        let mut removed_keys = Vec::new();
+
         for change in c.changes {
             match change {
                 AccountChange::AddKey { key } => {
@@ -250,6 +254,7 @@ impl ContractState {
                         self.key_accounts.entry(key).or_insert(BTreeSet::new());
 
                     key_accounts.insert(c.account_id);
+                    added_keys.push(key.0);
                 }
                 AccountChange::RemoveKey { key } => {
                     if account.threshold as usize > account_keys.len() {
@@ -268,6 +273,7 @@ impl ContractState {
                     let key_accounts = self.key_accounts.get_mut(&key).unwrap();
 
                     key_accounts.remove(&c.account_id);
+                    removed_keys.push(key.0);
                 }
                 AccountChange::SetThreshold { threshold } => {
                     if threshold < 1 {
@@ -286,7 +292,15 @@ impl ContractState {
 
         account.nonce += 1;
 
-        // TODO: emit event
+        rusk_abi::emit(
+            "change_account",
+            ChangeAccountEvent {
+                account_id: c.account_id,
+                added_keys,
+                removed_keys,
+                threshold: account.threshold,
+            },
+        );
     }
 
     /// Returns the balance and nonce of the account with the given ID.
