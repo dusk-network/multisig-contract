@@ -12,6 +12,9 @@ multisig-contract-types = { path = "./types", version = "=0.1.0" }
 
 execution-core = { path = "../rusk/execution-core" }
 rusk-abi = { path = "../rusk/rusk-abi", default-features = false }
+rusk-recovery = { path = "../rusk/rusk-recovery", default-features = false }
+tempfile = "3.13.0"
+toml = "0.8.19"
 
 bytecheck = { version = "0.6.12", default-features = false }
 rkyv = { version = "0.7.39", default-features = false, features = [
@@ -19,3 +22,7 @@ rkyv = { version = "0.7.39", default-features = false, features = [
 	"alloc",
 	"validation",
 ] }
+
+rand = "0.8.5"
+bs58 = "0.5.1"
+dusk-bytes = "0.1.7"

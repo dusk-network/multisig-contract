@@ -2,6 +2,8 @@ use std::sync::mpsc;
 
 use execution_core::{ContractId, StandardBufSerializer};
 use rusk_abi::{CallReceipt, ContractData, PiecrustError, Session};
+use rusk_recovery_tools::state;
+use tempfile::TempDir;
 
 use bytecheck::CheckBytes;
 use rkyv::de::deserializers::SharedDeserializeMap;
@@ -16,9 +18,14 @@ use multisig_contract_types::*;
 
 const CONTRACT_BYTECODE: &[u8] = include_bytes!("../../build/multisig_contract.wasm");
 const CONTRACT_ID: ContractId = ContractId::from_bytes([1; 32]);
+const CONTRACT_OWNER: [u8; 64] = [0u8; 64];
 
 const CHAIN_ID: u8 = 0xFE;
-const OWNER: [u8; 64] = [0u8; 64];
+const BLOCK_HEIGHT: u64 = 1;
+const SNAPSHOT: &str = include_str!("../state.toml");
+
+const NUM_KEYS: usize = 16;
+const RNG_SEED: u64 = 0xBEEF;
 
 type Result<T, Error = PiecrustError> = std::result::Result<T, Error>;
 
@@ -27,18 +34,24 @@ struct ContractSession {
     sks: Vec<SecretKey>,
     pks: Vec<PublicKey>,
     account_id: Option<u128>,
+    _state_dir: TempDir,
 }
 
 #[allow(dead_code)]
 impl ContractSession {
-    fn new<Rng: RngCore + CryptoRng>(rng: &mut Rng, num_keys: usize) -> Self {
-        let vm = rusk_abi::new_ephemeral_vm().expect("Creating VM should succeed");
-        let mut session = rusk_abi::new_genesis_session(&vm, CHAIN_ID);
+    fn new<Rng: RngCore + CryptoRng>(rng: &mut Rng) -> Self {
+        let state_dir = TempDir::new().expect("Creating temporary directory should succeed");
+        let snapshot = toml::from_str(SNAPSHOT).expect("Deserializing snapshot should succeed");
 
-        let mut sks = Vec::with_capacity(num_keys);
-        let mut pks = Vec::with_capacity(num_keys);
+        let (vm, root) = state::deploy(&state_dir, &snapshot, |_| {})
+            .expect("Deploying snapshot should succeed");
+        let mut session = rusk_abi::new_session(&vm, root, CHAIN_ID, BLOCK_HEIGHT)
+            .expect("Starting a new session should succeed");
 
-        for _ in 0..num_keys {
+        let mut sks = Vec::with_capacity(NUM_KEYS);
+        let mut pks = Vec::with_capacity(NUM_KEYS);
+
+        for _ in 0..NUM_KEYS {
             let sk = SecretKey::random(rng);
             let pk = PublicKey::from(&sk);
             sks.push(sk);
@@ -49,7 +62,7 @@ impl ContractSession {
             .deploy(
                 CONTRACT_BYTECODE,
                 ContractData::builder()
-                    .owner(OWNER)
+                    .owner(CONTRACT_OWNER)
                     .contract_id(CONTRACT_ID),
                 u64::MAX,
             )
@@ -60,6 +73,7 @@ impl ContractSession {
             sks,
             pks,
             account_id: None,
+            _state_dir: state_dir,
         }
     }
 
@@ -131,8 +145,8 @@ impl ContractSession {
 
 #[test]
 fn create_account() {
-    let mut rng = StdRng::seed_from_u64(0xBEEF);
-    let mut session = ContractSession::new(&mut rng, 32);
+    let mut rng = StdRng::seed_from_u64(RNG_SEED);
+    let mut session = ContractSession::new(&mut rng);
 
     session.create_account();
 
@@ -154,6 +168,19 @@ fn create_account() {
         assert_eq!(ids[0], id, "The ID should be of the created account");
     }
 }
+
+// #[test]
+// fn print() {
+//     use dusk_bytes::Serializable;
+//
+//     let mut rng = StdRng::seed_from_u64(RNG_SEED);
+//
+//     for _ in 0..NUM_KEYS {
+//         let sk = SecretKey::random(&mut rng);
+//         let pk = PublicKey::from(&sk);
+//         println!("{}", bs58::encode(pk.to_bytes()).into_string());
+//     }
+// }
 
 fn main() {
     unreachable!("`main` should never run for this crate");
