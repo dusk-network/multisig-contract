@@ -139,10 +139,10 @@ impl ContractSession {
     }
 
     fn create_account(&mut self) -> u64 {
-        let public_keys = self.pks.clone();
+        let keys = self.pks.clone();
 
         let create_account = CreateAccount {
-            public_keys,
+            keys,
             threshold: THRESHOLD,
         };
 
@@ -155,7 +155,7 @@ impl ContractSession {
     }
 
     fn deposit(&mut self, index: usize, amount: u64) {
-        let id = self
+        let account_id = self
             .account_id
             .expect("must call `create_account` before `account`");
         let sk = self.sks[index].clone();
@@ -164,7 +164,13 @@ impl ContractSession {
         const GAS_PRICE: u64 = 1;
         const NONCE: u64 = 1;
 
-        let fn_args = rkyv::to_bytes::<_, 128>(&(amount, id))
+        let deposit = Deposit {
+            account_id,
+            amount,
+            memo: String::new(),
+        };
+
+        let fn_args = rkyv::to_bytes::<_, 128>(&deposit)
             .expect("Serializing argument should succeed")
             .to_vec();
 
@@ -209,7 +215,7 @@ impl ContractSession {
     }
 
     fn transfer(&mut self, index: usize, receiver_index: usize, amount: u64) {
-        let id = self
+        let account_id = self
             .account_id
             .expect("must call `create_account` before `transfer`");
         let sk = self.sks[index].clone();
@@ -219,11 +225,12 @@ impl ContractSession {
         const NONCE: u64 = 1;
 
         let mut transfer = Transfer {
-            from_id: id,
-            from_kas: Vec::with_capacity(NUM_KEYS),
-            to: self.pks[receiver_index],
+            account_id,
+            account_kas: Vec::with_capacity(NUM_KEYS),
+            receiver: self.pks[receiver_index],
             amount,
             nonce: 1, // if its the first transfer, 2 if second, etc...
+            memo: String::new(),
         };
 
         let msg = transfer.signature_msg();
@@ -234,7 +241,7 @@ impl ContractSession {
         for i in 0..NUM_KEYS {
             let public_key = self.pks[i];
             let signature = self.sks[i].sign_multisig(&public_key, &msg);
-            transfer.from_kas.push(bls::PublicKeyAndSignature {
+            transfer.account_kas.push(bls::PublicKeyAndSignature {
                 public_key,
                 signature,
             });
@@ -285,10 +292,10 @@ impl ContractSession {
     }
 
     fn account(&mut self) -> AccountData {
-        let id = self
+        let account_id = self
             .account_id
             .expect("must call `create_account` before `account`");
-        self.call(CONTRACT_ID, "account", &id)
+        self.call(CONTRACT_ID, "account", &account_id)
             .expect("Querying an account should succeed")
             .data
     }
@@ -302,11 +309,11 @@ impl ContractSession {
     }
 
     fn account_keys(&mut self) -> Vec<PublicKey> {
-        let id = self
+        let account_id = self
             .account_id
             .expect("must call `create_account` before `account_keys`");
 
-        self.feeder_query("account_keys", &id)
+        self.feeder_query("account_keys", &account_id)
             .expect("Feeding account keys should succeed")
     }
 
@@ -400,7 +407,7 @@ fn transfer() {
     let balance = session.balance(RECEIVER_INDEX);
     assert_eq!(
         account.balance, DEPOSIT_AMOUNT,
-        "Account should have the amount deposited"
+        "Account should have the amount deposited",
     );
     assert_eq!(
         balance, INITIAL_BALANCE,

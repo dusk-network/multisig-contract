@@ -57,7 +57,7 @@ impl ContractState {
     /// Creates an account with the given public keys, returning the new
     /// account's ID.
     fn create_account(&mut self, ca: CreateAccount) -> u64 {
-        if ca.threshold as usize > ca.public_keys.len() {
+        if ca.threshold as usize > ca.keys.len() {
             panic!("Cannot use a threshold larger than the number of keys");
         }
 
@@ -70,18 +70,27 @@ impl ContractState {
         let account_id = account_id + 1;
 
         let mut account_keys = BTreeSet::new();
-        for key in ca.public_keys {
-            if !account_keys.insert(WrappedPublicKey(key)) {
+        for key in &ca.keys {
+            if !account_keys.insert(WrappedPublicKey(*key)) {
                 panic!("Cannot use duplicate keys to create an account");
             }
 
             self.key_accounts
-                .entry(WrappedPublicKey(key))
+                .entry(WrappedPublicKey(*key))
                 .or_insert(BTreeSet::new())
                 .insert(account_id);
         }
         self.account_keys.insert(account_id, account_keys);
         self.accounts.insert(account_id, AccountData::EMPTY);
+
+        rusk_abi::emit(
+            "create_account",
+            CreateAccountEvent {
+                account_id,
+                keys: ca.keys,
+                threshold: ca.threshold,
+            },
+        );
 
         account_id
     }
@@ -91,46 +100,50 @@ impl ContractState {
     /// NOTE: here we always accept a deposit to an existing account, however,
     ///       nothing stops us from including more complex logic, such as an
     ///       identity check.
-    fn deposit(&mut self, amount: u64, id: u64) {
+    fn deposit(&mut self, d: Deposit) {
         let account = self
             .accounts
-            .get_mut(&id)
+            .get_mut(&d.account_id)
             .expect("The account must exist when depositing funds");
 
-        rusk_abi::call::<_, ()>(TRANSFER_CONTRACT, "deposit", &amount)
+        rusk_abi::call::<_, ()>(TRANSFER_CONTRACT, "deposit", &d.amount)
             .expect("Retrieving deposit should succeed");
 
-        account.balance += amount;
+        account.balance += d.amount;
+
+        rusk_abi::emit(
+            "deposit",
+            DepositEvent {
+                account_id: d.account_id,
+                amount: d.amount,
+                memo: d.memo,
+            },
+        );
     }
 
     /// Transfers an amount from an account to the given Moonlight account.
-    ///
-    /// Signatures must be included of at least half (rounded-up) of at least
-    /// half of the account's keys.
-    fn transfer(&mut self, transfer: Transfer) {
+    fn transfer(&mut self, t: Transfer) {
         let account = self
             .accounts
-            .get_mut(&transfer.from_id)
+            .get_mut(&t.account_id)
             .expect("The account must exist when transferring from it");
 
-        if transfer.amount > account.balance {
+        if t.amount > account.balance {
             panic!("The account doesn't have enough balance to transfer");
         }
-        if transfer.nonce != account.nonce + 1 {
+        if t.nonce != account.nonce + 1 {
             panic!("The nonce must be the previous value incremented");
         }
 
-        let account_keys = self.account_keys.get(&transfer.from_id).unwrap();
-        if transfer.from_kas.len() < account.threshold as usize {
+        let account_keys = self.account_keys.get(&t.account_id).unwrap();
+        if t.account_kas.len() < account.threshold as usize {
             panic!("Threshold number of keys not met");
         }
 
-        // this set is here for the express purpose of checking for unique keys
-        // in the kas
-        let mut uniqueness_set = BTreeSet::new();
+        let mut key_set = BTreeSet::new();
 
-        for kas in &transfer.from_kas {
-            if !uniqueness_set.insert(WrappedPublicKey(kas.public_key)) {
+        for kas in &t.account_kas {
+            if !key_set.insert(WrappedPublicKey(kas.public_key)) {
                 panic!("Cannot use duplicate keys to transfer");
             }
 
@@ -152,8 +165,8 @@ impl ContractState {
             }
         }
 
-        let msg = transfer.signature_msg();
-        if !rusk_abi::verify_bls_multisig(msg, transfer.from_kas) {
+        let msg = t.signature_msg();
+        if !rusk_abi::verify_bls_multisig(msg, t.account_kas) {
             panic!("The signature should be valid to effect the transfer");
         }
 
@@ -167,11 +180,22 @@ impl ContractState {
             TRANSFER_CONTRACT,
             "contract_to_account",
             &ContractToAccount {
-                account: transfer.to,
-                value: transfer.amount,
+                account: t.receiver,
+                value: t.amount,
             },
         )
         .expect("Transferring to the given account should succeed");
+
+        rusk_abi::emit(
+            "transfer",
+            TransferEvent {
+                account_id: t.account_id,
+                keys: key_set.into_iter().map(|k| k.0).collect(),
+                receiver: t.receiver,
+                amount: t.amount,
+                memo: t.memo,
+            },
+        );
     }
 
     /// Returns the balance and nonce of the account with the given ID.
@@ -216,7 +240,7 @@ unsafe fn create_account(arg_len: u32) -> u32 {
 
 #[no_mangle]
 unsafe fn deposit(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |(amount, id)| STATE.deposit(amount, id))
+    rusk_abi::wrap_call(arg_len, |arg| STATE.deposit(arg))
 }
 
 #[no_mangle]
