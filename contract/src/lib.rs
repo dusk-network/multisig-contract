@@ -146,23 +146,6 @@ impl ContractState {
             if !key_set.insert(WrappedPublicKey(*key)) {
                 panic!("Cannot use duplicate keys to transfer");
             }
-
-            // NOTE: we might want to use a map for keys instead of a vector to
-            //       speed up these lookups if they become expensive. For now,
-            //       since we don't expect hundreds of keys for each account,
-            //       this is fine.
-            let mut contains = false;
-
-            for k in account_keys {
-                if k.0 == *key {
-                    contains = true;
-                    break;
-                }
-            }
-
-            if !contains {
-                panic!("The keys used to sign the transfer should be used by the account");
-            }
         }
 
         let msg = t.signature_msg();
