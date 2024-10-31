@@ -243,6 +243,8 @@ impl ContractState {
 
         let mut added_keys = Vec::new();
         let mut removed_keys = Vec::new();
+        let mut changed_threshold = false;
+        let mut changed_description = false;
 
         for change in c.changes {
             match change {
@@ -289,9 +291,11 @@ impl ContractState {
                     }
 
                     account.threshold = threshold;
+                    changed_threshold = true;
                 }
                 AccountChange::SetDescription { description } => {
                     account.description = description;
+                    changed_description = true;
                 }
             }
         }
@@ -304,8 +308,9 @@ impl ContractState {
                 account_id: c.account_id,
                 added_keys,
                 removed_keys,
-                threshold: account.threshold,
-                description: account.description.clone(),
+                threshold: changed_threshold.then_some(account.threshold),
+                description: changed_description
+                    .then_some(account.description.clone()),
             },
         );
     }

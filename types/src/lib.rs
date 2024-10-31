@@ -252,8 +252,8 @@ pub struct ChangeAccountEvent {
     pub added_keys: Vec<bls::PublicKey>,
     /// Keys removed during the change.
     pub removed_keys: Vec<bls::PublicKey>,
-    /// Threshold after the change.
-    pub threshold: u32,
-    /// The description of the account after the change.
-    pub description: String,
+    /// New threshold if changed.
+    pub threshold: Option<u32>,
+    /// New account description if changed.
+    pub description: Option<String>,
 }
