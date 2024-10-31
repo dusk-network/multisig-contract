@@ -22,6 +22,8 @@ pub struct CreateAccount {
     pub keys: Vec<bls::PublicKey>,
     /// Number of keys that need to sign to effect an operation.
     pub threshold: u32,
+    /// Description of the account.
+    pub description: String,
 }
 
 /// Used to deposit to a multisig account.
@@ -85,6 +87,8 @@ pub enum AccountChange {
     RemoveKey { key: bls::PublicKey },
     /// Set number of keys needed to effect an operation.
     SetThreshold { threshold: u32 },
+    /// Set the account's description.
+    SetDescription { description: String },
 }
 
 /// Used to perform changes to an account.
@@ -107,6 +111,7 @@ impl ChangeAccount {
     const ADD_KEY_TAG: u8 = 0;
     const REMOVE_KEY_TAG: u8 = 1;
     const SET_THRESHOLD_TAG: u8 = 2;
+    const SET_DESCRIPTION_TAG: u8 = 3;
 
     /// Returns the message that should be signed to have a valid change.
     // NOTE: We purposefully don't include the keys used in the message to
@@ -125,6 +130,9 @@ impl ChangeAccount {
                         AccountChange::AddKey { .. } => 193,
                         AccountChange::RemoveKey { .. } => 193,
                         AccountChange::SetThreshold { .. } => 4,
+                        AccountChange::SetDescription { description } => {
+                            description.len()
+                        }
                     }
                 })
                 .sum::<usize>()
@@ -161,6 +169,14 @@ impl ChangeAccount {
                         .copy_from_slice(&threshold.to_le_bytes());
                     offset += 4;
                 }
+                AccountChange::SetDescription { description } => {
+                    msg[offset] = Self::SET_DESCRIPTION_TAG;
+                    offset += 1;
+
+                    msg[offset..offset + description.len()]
+                        .copy_from_slice(&description.as_bytes());
+                    offset += description.len();
+                }
             }
         }
 
@@ -172,26 +188,17 @@ impl ChangeAccount {
 }
 
 /// The data about a given account.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Archive, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes))]
 pub struct AccountData {
     /// The balance the account holds.
     pub balance: u64,
     /// Number of keys that need to sign to effect an operation.
     pub threshold: u32,
+    /// Description of the account.
+    pub description: String,
     /// The current nonce of the account.
     pub nonce: u64,
-}
-
-impl AccountData {
-    /// An account that has never been used.
-    pub const EMPTY: Self = AccountData {
-        balance: 0,
-        threshold: 0,
-        nonce: 0,
-    };
 }
 
 /// Event emitted upon a successful account creation.
@@ -203,6 +210,8 @@ pub struct CreateAccountEvent {
     pub keys: Vec<bls::PublicKey>,
     /// Number of keys that need to sign to effect an operation.
     pub threshold: u32,
+    /// The description of the account.
+    pub description: String,
 }
 
 /// Event emitted upon a successful deposit.
@@ -245,4 +254,6 @@ pub struct ChangeAccountEvent {
     pub removed_keys: Vec<bls::PublicKey>,
     /// Threshold after the change.
     pub threshold: u32,
+    /// The description of the account after the change.
+    pub description: String,
 }

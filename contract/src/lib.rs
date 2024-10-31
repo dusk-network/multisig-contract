@@ -5,6 +5,7 @@ extern crate alloc;
 use core::cmp::Ordering;
 
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
@@ -94,6 +95,7 @@ impl ContractState {
                 balance: 0,
                 threshold: ca.threshold,
                 nonce: 0,
+                description: ca.description.clone(),
             },
         );
 
@@ -103,6 +105,7 @@ impl ContractState {
                 account_id,
                 keys: ca.keys,
                 threshold: ca.threshold,
+                description: ca.description,
             },
         );
 
@@ -287,6 +290,9 @@ impl ContractState {
 
                     account.threshold = threshold;
                 }
+                AccountChange::SetDescription { description } => {
+                    account.description = description;
+                }
             }
         }
 
@@ -299,6 +305,7 @@ impl ContractState {
                 added_keys,
                 removed_keys,
                 threshold: account.threshold,
+                description: account.description.clone(),
             },
         );
     }
@@ -307,7 +314,12 @@ impl ContractState {
     fn account(&self, id: u64) -> AccountData {
         self.accounts
             .get(&id)
-            .unwrap_or(&AccountData::EMPTY)
+            .unwrap_or(&AccountData {
+                balance: 0,
+                threshold: 0,
+                description: String::new(),
+                nonce: 0,
+            })
             .clone()
     }
 

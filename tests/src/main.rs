@@ -33,6 +33,7 @@ const SNAPSHOT: &str = include_str!("../state.toml");
 
 const NUM_KEYS: usize = 16;
 const THRESHOLD: u32 = NUM_KEYS as u32 / 2;
+const DESCRIPTION: &str = "test-description";
 const MEMO: &str = "test-memo";
 const RNG_SEED: u64 = 0xBEEF;
 const INITIAL_BALANCE: u64 = 10_000_000_000;
@@ -145,6 +146,7 @@ impl ContractSession {
         let create_account = CreateAccount {
             keys,
             threshold: THRESHOLD,
+            description: String::from(DESCRIPTION),
         };
 
         let id = self
@@ -415,6 +417,7 @@ fn create_account() {
 
     session.create_account();
 
+    let account = session.account();
     let account_keys = session.account_keys();
 
     assert_eq!(
@@ -451,6 +454,13 @@ fn create_account() {
             "The ID should be of the created account"
         );
     }
+
+    assert_eq!(account.balance, 0, "Balance should be zero");
+    assert_eq!(account.threshold, THRESHOLD, "Threshold should be as set");
+    assert_eq!(
+        account.description, DESCRIPTION,
+        "Description should be as set"
+    );
 }
 
 #[test]
@@ -523,6 +533,8 @@ fn transfer() {
 fn change_account() {
     const CHANGER_INDEX: usize = 1;
     const REMOVE_INDEX: usize = 4;
+    const NEW_THRESHOLD: u32 = THRESHOLD + 1;
+    const NEW_DESCRIPTION: &str = "new-description";
 
     let mut rng = StdRng::seed_from_u64(RNG_SEED);
     let mut session = ContractSession::new(&mut rng);
@@ -533,9 +545,11 @@ fn change_account() {
     session.create_account();
 
     let account = session.account();
+    assert_eq!(account.balance, 0, "Balance should be zero");
+    assert_eq!(account.threshold, THRESHOLD, "Threshold should be as set");
     assert_eq!(
-        account.threshold, THRESHOLD,
-        "Threshold should be the initial one",
+        account.description, DESCRIPTION,
+        "Description should be as set"
     );
 
     let mut pks = session.pks.clone();
@@ -580,20 +594,27 @@ fn change_account() {
         CHANGER_INDEX,
         vec![
             AccountChange::SetThreshold {
-                threshold: THRESHOLD + 1,
+                threshold: NEW_THRESHOLD,
             },
             AccountChange::RemoveKey {
                 key: session.pks[REMOVE_INDEX],
             },
             AccountChange::AddKey { key: new_pk },
+            AccountChange::SetDescription {
+                description: String::from(NEW_DESCRIPTION),
+            },
         ],
     );
 
     let account = session.account();
+    assert_eq!(account.balance, 0, "Balance should be zero");
     assert_eq!(
-        account.threshold,
-        THRESHOLD + 1,
-        "Threshold should be the set to the new value",
+        account.threshold, NEW_THRESHOLD,
+        "Threshold should be as set"
+    );
+    assert_eq!(
+        account.description, NEW_DESCRIPTION,
+        "Description should be as set"
     );
 
     let removed_pk = pks.remove(REMOVE_INDEX);
