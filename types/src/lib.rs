@@ -1,3 +1,9 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) DUSK NETWORK. All rights reserved.
+
 //! Types used to interact with the `multisig-contract`.
 
 #![no_std]
@@ -12,7 +18,7 @@ use alloc::vec::Vec;
 use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 
-pub use execution_core::signatures::bls;
+pub use dusk_core::signatures::bls;
 
 /// Used to create multisig accounts.
 #[derive(Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
