@@ -3,16 +3,15 @@ resolver = "2"
 members = ["types", "contract", "tests"]
 
 [workspace.package]
-authors = ["Eduardo Leegwater Simões <eduardo@dusk.network>"]
 version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
 multisig-contract-types = { path = "./types", version = "=0.1.0" }
 
-execution-core = { path = "../rusk/execution-core" }
-rusk-abi = { path = "../rusk/rusk-abi", default-features = false }
-rusk-recovery = { path = "../rusk/rusk-recovery", default-features = false }
+dusk-core = "1"
+dusk-vm = "1"
+rusk-recovery = { version = "1", default-features = false }
 tempfile = "3.13.0"
 toml = "0.8.19"
 

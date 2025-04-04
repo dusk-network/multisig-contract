@@ -1,3 +1,9 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) DUSK NETWORK. All rights reserved.
+
 #![no_std]
 
 extern crate alloc;
@@ -8,7 +14,8 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use execution_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
+use dusk_core::abi;
+use dusk_core::transfer::{ContractToAccount, TRANSFER_CONTRACT};
 
 use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -99,7 +106,7 @@ impl ContractState {
             },
         );
 
-        rusk_abi::emit(
+        abi::emit(
             "create_account",
             CreateAccountEvent {
                 account_id,
@@ -123,12 +130,12 @@ impl ContractState {
             .get_mut(&d.account_id)
             .expect("The account must exist when depositing funds");
 
-        rusk_abi::call::<_, ()>(TRANSFER_CONTRACT, "deposit", &d.amount)
+        abi::call::<_, ()>(TRANSFER_CONTRACT, "deposit", &d.amount)
             .expect("Retrieving deposit should succeed");
 
         account.balance += d.amount;
 
-        rusk_abi::emit(
+        abi::emit(
             "deposit",
             DepositEvent {
                 account_id: d.account_id,
@@ -172,7 +179,7 @@ impl ContractState {
         }
 
         let msg = t.signature_msg();
-        if !rusk_abi::verify_bls_multisig(msg, t.keys, t.signature) {
+        if !abi::verify_bls_multisig(msg, t.keys, t.signature) {
             panic!("The signature should be valid to effect the transfer");
         }
 
@@ -182,7 +189,7 @@ impl ContractState {
         //       withdrawal is made.
         //       In such a case, it would be possible to withdraw the funds to
         //       either Moonlight *or* Phoenix.
-        rusk_abi::call::<_, ()>(
+        abi::call::<_, ()>(
             TRANSFER_CONTRACT,
             "contract_to_account",
             &ContractToAccount {
@@ -195,7 +202,7 @@ impl ContractState {
         account.balance -= t.amount;
         account.nonce += 1;
 
-        rusk_abi::emit(
+        abi::emit(
             "transfer",
             TransferEvent {
                 account_id: t.account_id,
@@ -237,7 +244,7 @@ impl ContractState {
         }
 
         let msg = c.signature_msg();
-        if !rusk_abi::verify_bls_multisig(msg, c.keys, c.signature) {
+        if !abi::verify_bls_multisig(msg, c.keys, c.signature) {
             panic!("The signature should be valid to effect the change");
         }
 
@@ -302,7 +309,7 @@ impl ContractState {
 
         account.nonce += 1;
 
-        rusk_abi::emit(
+        abi::emit(
             "change_account",
             ChangeAccountEvent {
                 account_id: c.account_id,
@@ -336,7 +343,7 @@ impl ContractState {
             .cloned()
             .unwrap_or(BTreeSet::new())
         {
-            rusk_abi::feed(key);
+            abi::feed(key);
         }
     }
 
@@ -348,7 +355,7 @@ impl ContractState {
             .cloned()
             .unwrap_or(BTreeSet::new())
         {
-            rusk_abi::feed(id)
+            abi::feed(id)
         }
     }
 }
@@ -357,39 +364,39 @@ impl ContractState {
 
 #[no_mangle]
 unsafe fn create_account(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.create_account(arg))
+    abi::wrap_call(arg_len, |arg| STATE.create_account(arg))
 }
 
 #[no_mangle]
 unsafe fn deposit(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.deposit(arg))
+    abi::wrap_call(arg_len, |arg| STATE.deposit(arg))
 }
 
 #[no_mangle]
 unsafe fn transfer(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.transfer(arg))
+    abi::wrap_call(arg_len, |arg| STATE.transfer(arg))
 }
 
 #[no_mangle]
 unsafe fn change_account(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.change_account(arg))
+    abi::wrap_call(arg_len, |arg| STATE.change_account(arg))
 }
 
 // Queries
 
 #[no_mangle]
 unsafe fn account(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.account(arg))
+    abi::wrap_call(arg_len, |arg| STATE.account(arg))
 }
 
 // Feeder queries
 
 #[no_mangle]
 unsafe fn account_keys(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.account_keys(arg))
+    abi::wrap_call(arg_len, |arg| STATE.account_keys(arg))
 }
 
 #[no_mangle]
 unsafe fn key_accounts(arg_len: u32) -> u32 {
-    rusk_abi::wrap_call(arg_len, |arg| STATE.key_accounts(arg))
+    abi::wrap_call(arg_len, |arg| STATE.key_accounts(arg))
 }

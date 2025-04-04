@@ -1,23 +1,25 @@
-use std::sync::mpsc;
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) DUSK NETWORK. All rights reserved.
 
-use execution_core::{
-    transfer::{
-        data::ContractCall, moonlight::AccountData as MoonlightAccountData,
-        Transaction, TRANSFER_CONTRACT,
-    },
-    ContractError, ContractId, StandardBufSerializer,
-};
-use rusk_abi::{CallReceipt, ContractData, PiecrustError, Session};
-use rusk_recovery_tools::state;
-use tempfile::TempDir;
+use std::sync::{mpsc, LazyLock};
 
 use bytecheck::CheckBytes;
+use dusk_bytes::DeserializableSlice;
+use dusk_core::abi::{ContractError, ContractId, StandardBufSerializer};
+use dusk_core::transfer::data::ContractCall;
+use dusk_core::transfer::moonlight::AccountData as MoonlightAccountData;
+use dusk_core::transfer::{Transaction, TRANSFER_CONTRACT};
+use dusk_vm::{CallReceipt, ContractData, Error as VMError, Session};
+use rand::rngs::StdRng;
+use rand::{CryptoRng, RngCore, SeedableRng};
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::validation::validators::DefaultValidator;
 use rkyv::{Archive, Deserialize, Infallible, Serialize};
-
-use rand::rngs::StdRng;
-use rand::{CryptoRng, RngCore, SeedableRng};
+use rusk_recovery_tools::state;
+use tempfile::TempDir;
 
 use bls::{MultisigSignature, PublicKey, SecretKey};
 use multisig_contract_types::*;
@@ -38,7 +40,13 @@ const MEMO: &str = "test-memo";
 const RNG_SEED: u64 = 0xBEEF;
 const INITIAL_BALANCE: u64 = 10_000_000_000;
 
-type Result<T, Error = PiecrustError> = std::result::Result<T, Error>;
+type Result<T, Error = VMError> = std::result::Result<T, Error>;
+
+static DUSK_CONSENSUS_KEY: LazyLock<PublicKey> = LazyLock::new(|| {
+    let dusk_cpk_bytes = include_bytes!("../dusk.cpk");
+    PublicKey::from_slice(dusk_cpk_bytes)
+        .expect("Dusk consensus public key to be valid")
+});
 
 struct ContractSession {
     session: Session,
@@ -56,11 +64,12 @@ impl ContractSession {
         let snapshot = toml::from_str(SNAPSHOT)
             .expect("Deserializing snapshot should succeed");
 
-        let (vm, root) = state::deploy(&state_dir, &snapshot, |_| {})
-            .expect("Deploying snapshot should succeed");
-        let mut session =
-            rusk_abi::new_session(&vm, root, CHAIN_ID, BLOCK_HEIGHT)
-                .expect("Starting a new session should succeed");
+        let (vm, root) =
+            state::deploy(&state_dir, &snapshot, *DUSK_CONSENSUS_KEY, |_| {})
+                .expect("Deploying snapshot should succeed");
+        let mut session = vm
+            .session(root, CHAIN_ID, BLOCK_HEIGHT)
+            .expect("Starting a new session should succeed");
 
         let mut sks = Vec::with_capacity(NUM_KEYS);
         let mut pks = Vec::with_capacity(NUM_KEYS);
@@ -132,8 +141,7 @@ impl ContractSession {
 
         for bytes in receiver.into_iter() {
             results.push(
-                rkyv::from_bytes(&bytes)
-                    .map_err(|_| PiecrustError::MissingFeed)?,
+                rkyv::from_bytes(&bytes).map_err(|_| VMError::MissingFeed)?,
             );
         }
 

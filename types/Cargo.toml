@@ -1,11 +1,10 @@
 [package]
 name = "multisig-contract-types"
-authors.workspace = true
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-execution-core = { workspace = true }
+dusk-core = { workspace = true }
 
 bytecheck = { workspace = true }
 rkyv = { workspace = true }
